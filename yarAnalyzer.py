@@ -29,7 +29,7 @@ from prettytable import PrettyTable
 def scan_path(path, rule_sets, num_first_bytes=6):
 
     # Startup
-    log("INFO","Scanning %s ...  " % path)
+    log("INFO", f"Scanning {path} ...  ")
 
     # Counter
     c = 0
@@ -55,10 +55,7 @@ def scan_path(path, rule_sets, num_first_bytes=6):
                     continue
 
                 # Prepare the file matches
-                file_stats[relPath] = {}
-                file_stats[relPath]["matches"] = {}
-                file_stats[relPath]["size"] = fileSize
-
+                file_stats[relPath] = {"matches": {}, "size": fileSize}
                 # Set fileData to an empty value
                 fileData = ""
 
@@ -71,8 +68,11 @@ def scan_path(path, rule_sets, num_first_bytes=6):
                 fileData = read_file_data(filePath)
 
                 if len(fileData) > 1:
-                    file_stats[relPath]["firstBytes_Hex"] = "%s" % fileData[:num_first_bytes].hex()
-                    file_stats[relPath]["firstBytes_Ascii"] = "%s" % remove_non_ascii(fileData[:num_first_bytes])
+                    file_stats[relPath]["firstBytes_Hex"] = f"{fileData[:num_first_bytes].hex()}"
+                    file_stats[relPath][
+                        "firstBytes_Ascii"
+                    ] = f"{remove_non_ascii(fileData[:num_first_bytes])}"
+
                 else:
                     file_stats[relPath]["firstBytes_Hex"] = "-"
                     file_stats[relPath]["firstBytes_Ascii"] = "-"
@@ -82,10 +82,10 @@ def scan_path(path, rule_sets, num_first_bytes=6):
                 file_stats[relPath]["sha1"] = sha1
                 file_stats[relPath]["sha256"] = sha256
 
-                log("DEBUG", "MD5: %s SHA1: %s SHA256: %s FILE: %s" % (md5, sha1, sha256, filePath))
+                log("DEBUG", f"MD5: {md5} SHA1: {sha1} SHA256: {sha256} FILE: {filePath}")
 
                 if args.printAll:
-                    print("FILE: %s" % filePath)
+                    print(f"FILE: {filePath}")
 
                 # Yara Check -------------------------------------------------------
 
@@ -93,24 +93,23 @@ def scan_path(path, rule_sets, num_first_bytes=6):
                 try:
                     for rules in rule_sets:
 
-                        # Yara Rule Match -------------------------------------
-                        matches = rules.match(data=fileData,
-                                              externals={
-                                                  'filename': filename.lower(),
-                                                  'filepath': filePath.lower()
-                                              })
-
-                        # If matched ------------------------------------------
-                        if matches:
+                        if matches := rules.match(
+                            data=fileData,
+                            externals={
+                                'filename': filename.lower(),
+                                'filepath': filePath.lower(),
+                            },
+                        ):
                             for match in matches:
 
                                 description = "not set"
 
                                 # Built-in rules have meta fields (cannot be expected from custom rules)
-                                if hasattr(match, 'meta'):
-
-                                    if 'description' in match.meta:
-                                        description = match.meta['description']
+                                if (
+                                    hasattr(match, 'meta')
+                                    and 'description' in match.meta
+                                ):
+                                    description = match.meta['description']
 
                                 # Matching strings
                                 matched_strings = ""
@@ -148,7 +147,7 @@ def read_file_data(filePath):
         with open(filePath, 'rb') as f:
             fileData = f.read()
     except Exception as e:
-        log("DEBUG", "Cannot open file %s (access denied)" % filePath)
+        log("DEBUG", f"Cannot open file {filePath} (access denied)")
     finally:
         return fileData
 
@@ -170,26 +169,22 @@ def generate_hashes(filedata):
 def get_string_matches(strings):
     try:
         string_matches = []
-        matching_strings = ""
         for string in strings:
             # print string
             extract = string[2]
-            if not extract in string_matches:
+            if extract not in string_matches:
                 string_matches.append(extract)
 
-        string_num = 1
-        for string in string_matches:
-            # UNICDOE
-            if b'\x00' in string:
-                matching_strings += " Str" + str(string_num) + "(U): " + remove_binary_zero(string)
-            else:
-            # ASCII
-                matching_strings += " Str" + str(string_num) + "(A): " + remove_binary_zero(string)
-            string_num += 1
+        matching_strings = "".join(
+            f" Str{str(string_num)}(U): {remove_binary_zero(string)}"
+            if b'\x00' in string
+            else f" Str{str(string_num)}(A): {remove_binary_zero(string)}"
+            for string_num, string in enumerate(string_matches, start=1)
+        )
 
         # Limit string
         if len(matching_strings) > 140:
-            matching_strings = matching_strings[:140] + " ... (truncated)"
+            matching_strings = f"{matching_strings[:140]} ... (truncated)"
 
         return matching_strings.lstrip(" ")
     except:
@@ -250,9 +245,9 @@ def initialize_yara_rules(rule_path, rules_extension):
                                         yara_rule_infos[file][rule.identifier]["reference"] = rule.meta["reference"]
 
                                 yara_rules.append(compiledRules)
-                                log("INFO", "Initialized Yara rules from %s" % file)
+                                log("INFO", f"Initialized Yara rules from {file}")
                             except Exception as e:
-                                log("ERROR", "Error in Yara file: %s" % file)
+                                log("ERROR", f"Error in Yara file: {file}")
                                 if args.debug:
                                     traceback.print_exc()
 
@@ -266,7 +261,6 @@ def initialize_yara_rules(rule_path, rules_extension):
             if args.debug:
                 traceback.print_exc()
 
-    # Is a signature file
     else:
         try:
             compiledRules = yara.compile(rule_path, externals= {
@@ -274,9 +268,9 @@ def initialize_yara_rules(rule_path, rules_extension):
                                               'filepath': dummy
                                           })
             yara_rules.append(compiledRules)
-            log("INFO", "Initialized Yara rules from %s" % rule_path)
+            log("INFO", f"Initialized Yara rules from {rule_path}")
         except Exception as e:
-            log("ERROR", "Error in Yara file: %s" % rule_path)
+            log("ERROR", f"Error in Yara file: {rule_path}")
             if args.debug:
                 traceback.print_exc()
 
@@ -307,9 +301,7 @@ def generate_yara_inventory(output_file, yara_rule_infos):
 def generate_yara_stats_structure(yara_rules):
     for rule_set in yara_rules:
         for rule in rule_set:
-            rule_stats[rule.identifier] = {}
-            rule_stats[rule.identifier]["files"] = []
-            rule_stats[rule.identifier]["count"] = 0
+            rule_stats[rule.identifier] = {"files": [], "count": 0}
 
 
 def remove_binary_zero(s):
@@ -330,11 +322,6 @@ def get_application_path():
             application_path = os.path.dirname(os.path.realpath(sys.executable))
         elif __file__:
             application_path = os.path.dirname(__file__)
-        if application_path != "":
-            # Working directory change skipped due to the function to create TXT, CSV and HTML file on the local file
-            # system when thor is started from a read only network share
-            # os.chdir(application_path)
-            pass
         if application_path == "":
             application_path = os.path.dirname(os.path.realpath(__file__))
         #if args.debug:
@@ -349,7 +336,7 @@ def log(mes_type, message):
     if not args.debug and mes_type == "DEBUG":
         return
 
-    print("[%s]: %s" % (mes_type, message))
+    print(f"[{mes_type}]: {message}")
 
 
 def remove_non_ascii(s):
@@ -365,14 +352,14 @@ def remove_non_ascii(s):
         nonascii = ''.join(new_bytes)
     except Exception as e:
         traceback.print_exc()
-        pass
     return nonascii
 
 
 def get_platform_full():
     type_info = ""
     try:
-        type_info = "%s PROC: %s ARCH: %s" % ( " ".join(platform.win32_ver()), platform.processor(), " ".join(platform.architecture()))
+        type_info = f'{" ".join(platform.win32_ver())} PROC: {platform.processor()} ARCH: {" ".join(platform.architecture())}'
+
     except Exception as e:
         type_info = " ".join(platform.win32_ver())
     return type_info
@@ -531,7 +518,7 @@ def print_welcome():
     print("  ")
     print("  by Florian Roth")
     print("  November 2019")
-    print("  Version %s" % __version__)
+    print(f"  Version {__version__}")
     print("  ")
     print("=======================================================================")
     print("  ")
